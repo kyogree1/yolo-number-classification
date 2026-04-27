@@ -119,7 +119,7 @@ h1 {
 #paint-canvas {
   border: 2px dashed rgba(79, 100, 74, 0.55);
   border-radius: 10px;
-  background: #ffffff;
+  background: #000000;
   cursor: crosshair;
   touch-action: none; /* Mencegah scrolling saat menggambar di HP */
 }
