@@ -1,0 +1,114 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+  <meta charset="UTF-8">
+  <title>Klasifikasi Angka</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+  <div class="container">
+
+    <div>
+      <div class="badge">
+        <span class="badge-dot"></span>
+        Web-Based Digit Classification Using YOLOv8
+      </div>
+
+      <h1>Implementasi Algoritma YOLOv8 untuk Klasifikasi Angka Berbasis Web</h1>
+      <p class="subtitle">
+        Didukung oleh <strong>arsitektur YOLOv8</strong>, aplikasi web ini 
+        memberikan <strong>klasifikasi angka secara real-time</strong> dengan akurasi tinggi.
+      </p>
+
+      <div class="upload-card">
+        
+        <div class="input-tabs">
+          <button class="tab-btn active" onclick="switchInput('upload', this)">Upload Gambar</button>
+          <button class="tab-btn" onclick="switchInput('draw', this)">Tulis Angka</button>
+        </div>
+
+        <div id="upload-area">
+          <label for="image-input" class="upload-label">
+            <div class="upload-icon">📷</div>
+            <div class="upload-main-text">Pilih File</div>
+            <div class="upload-sub-text">Klik atau <span class="highlight">drag &amp; drop</span> gambar angka ke area ini.</div>
+            <div class="upload-sub-text" style="font-size: 11px; margin-top: 4px;">Format didukung: JPG, JPEG, PNG</div>
+          </label>
+          <input id="image-input" type="file" accept="image/*" class="upload-input">
+        </div>
+
+        <div id="draw-area" style="display:none; text-align:center;">
+          <canvas id="paint-canvas" width="280" height="280"></canvas>
+          <div style="margin-top: 10px;">
+            <button type="button" onclick="clearCanvas()" class="btn-small">Hapus Papan</button>
+          </div>
+        </div>
+
+        <div class="preview-wrapper">
+          <div class="preview-box">
+            <canvas id="preview-canvas"></canvas>
+            <div id="preview-placeholder" class="preview-placeholder">
+              Preview citra akan muncul di sini.
+            </div>
+          </div>
+          <div class="preview-info">
+            <p><strong>Informasi File</strong></p>
+            <p id="file-name">Sumber: -</p>
+            <p id="file-size">Ukuran: -</p>
+            <p id="file-type">Tipe: -</p>
+          </div>
+        </div>
+
+        <button id="predict-btn" class="btn" disabled>
+          <span class="btn-icon">⚙️</span>
+          <span>Klasifikasikan Angka</span>
+        </button>
+
+        <div class="status-text" id="status-text">
+          <span class="status-dot" id="status-dot"></span>
+          <span>Belum ada proses klasifikasi yang berjalan.</span>
+        </div>
+      </div>
+    </div>
+
+    <div class="result-card">
+      <div class="result-title">
+        <span>Hasil Klasifikasi</span>
+        <span class="pill" id="model-pill">Model: YOLOv8</span>
+      </div>
+
+      <div class="prediction-box">
+        <div id="prediction-label" class="prediction-label">
+          Belum ada prediksi
+        </div>
+        <div id="prediction-confidence" class="prediction-confidence">
+          Confidence: - 
+        </div>
+      </div>
+
+      <div class="log-area" id="log-area">
+        <div class="log-line">[INFO] Sistem siap. Silakan upload atau tulis angka.</div>
+      </div>
+
+      <div class="hint-text">
+        Hint: Di sisi backend, endpoint <code>/predict</code> memproses gambar melalui 
+        model <strong>YOLOv8</strong>. Sistem akan mendeteksi angka dalam citra dan 
+        mengembalikan label angka (0–9) beserta tingkat kepercayaan (confidence score).
+      </div>
+    </div>
+  </div>
+
+  <script>
+    function switchInput(type, btnElement) {
+      document.querySelectorAll('.tab-btn').forEach(btn => btn.classList.remove('active'));
+      btnElement.classList.add('active');
+      
+      document.getElementById('upload-area').style.display = type === 'upload' ? 'block' : 'none';
+      document.getElementById('draw-area').style.display = type === 'draw' ? 'block' : 'none';
+    }
+  </script>
+
+  <script src="app.js" defer></script>
+</body>
+</html>
