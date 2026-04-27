@@ -372,3 +372,10 @@ h1 {
   font-size: 11px;
   color: #767e6b;
 }
+
+.upload-area.dragover {
+    background-color: rgba(92, 107, 84, 0.15); /* Warna hijau army transparan */
+    border-color: var(--army-600);
+    transform: scale(1.02);
+    transition: all 0.2s ease-in-out;
+}

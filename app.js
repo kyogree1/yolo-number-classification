@@ -1,330 +1,260 @@
-const API_URL = 'http://localhost:5000/predict';
-const PREVIEW_MAX_SIZE = 150;
-const MODEL_INPUT_SIZE = 280;
-const BACKGROUND_THRESHOLD = 190;
+// ==========================================
+// 1. INISIALISASI ELEMEN
+// ==========================================
+const paintCanvas = document.getElementById('paint-canvas');
+const ctx = paintCanvas.getContext('2d');
+const predictBtn = document.getElementById('predict-btn');
+const imageInput = document.getElementById('image-input');
 
-const elements = {
-    paintCanvas: document.getElementById('paint-canvas'),
-    predictBtn: document.getElementById('predict-btn'),
-    imageInput: document.getElementById('image-input'),
-    statusText: document.getElementById('status-text').querySelector('span:nth-child(2)'),
-    statusDot: document.getElementById('status-dot'),
-    predictionLabel: document.getElementById('prediction-label'),
-    predictionConfidence: document.getElementById('prediction-confidence'),
-    logArea: document.getElementById('log-area'),
-    previewCanvas: document.getElementById('preview-canvas'),
-    previewPlaceholder: document.getElementById('preview-placeholder'),
-    fileName: document.getElementById('file-name'),
-    fileSize: document.getElementById('file-size'),
-    fileType: document.getElementById('file-type')
-};
-
-const paintCtx = elements.paintCanvas.getContext('2d');
-const previewCtx = elements.previewCanvas.getContext('2d');
-
-const state = {
-    isDrawing: false,
-    uploadPreparedBlob: null,
-    uploadPreparedFilename: null
-};
+// Elemen Hasil
+const statusText = document.getElementById('status-text').querySelector('span:nth-child(2)');
+const statusDot = document.getElementById('status-dot');
+const predictionLabel = document.getElementById('prediction-label');
+const predictionConfidence = document.getElementById('prediction-confidence');
+const logArea = document.getElementById('log-area');
 
 function addLog(message) {
-    const line = document.createElement('div');
-    line.className = 'log-line';
-    line.innerText = message;
-    elements.logArea.appendChild(line);
-    elements.logArea.scrollTop = elements.logArea.scrollHeight;
+    const p = document.createElement('div');
+    p.className = 'log-line';
+    p.innerText = message;
+    logArea.appendChild(p);
+    logArea.scrollTop = logArea.scrollHeight; // Auto-scroll ke bawah
 }
 
-function setStatus(message, isLoading) {
-    elements.statusText.innerText = message;
-    elements.statusDot.classList.toggle('loading', isLoading);
+// ==========================================
+// 2. LOGIKA DRAWING CANVAS (PAPAN TULIS)
+// ==========================================
+let isDrawing = false;
+
+// UBAH KE HITAM: Pastikan background hitam agar sesuai dengan dataset model
+function resetCanvasBackground() {
+    ctx.fillStyle = "#000000"; 
+    ctx.fillRect(0, 0, paintCanvas.width, paintCanvas.height);
+}
+resetCanvasBackground();
+
+// UBAH KE PUTIH & LEBIH TEBAL: Pengaturan Kuas
+ctx.strokeStyle = "#ffffff"; 
+ctx.lineWidth = 18;          
+ctx.lineCap = "round";       
+ctx.lineJoin = "round";      
+
+function startPosition(e) {
+    isDrawing = true;
+    ctx.beginPath(); // PENTING: Memulai garis baru
+    draw(e);
 }
 
-function resetPredictionResult() {
-    elements.predictionLabel.innerText = 'Belum ada prediksi';
-    elements.predictionLabel.style.color = 'var(--army-900)';
-    elements.predictionConfidence.innerText = 'Confidence: -';
+function endPosition() {
+    if (!isDrawing) return;
+    isDrawing = false;
+    ctx.beginPath(); // Memutus garis sebelumnya
+    predictBtn.disabled = false; // Nyalakan tombol karena ada coretan
 }
 
-function resetPaintCanvasBackground() {
-    paintCtx.fillStyle = '#000000';
-    paintCtx.fillRect(0, 0, elements.paintCanvas.width, elements.paintCanvas.height);
-}
-
-function setupPaintCanvas() {
-    resetPaintCanvasBackground();
-    paintCtx.strokeStyle = '#ffffff';
-    paintCtx.lineWidth = 18;
-    paintCtx.lineCap = 'round';
-    paintCtx.lineJoin = 'round';
-
-    elements.paintCanvas.addEventListener('mousedown', startDrawing);
-    elements.paintCanvas.addEventListener('mouseup', endDrawing);
-    elements.paintCanvas.addEventListener('mousemove', drawStroke);
-    elements.paintCanvas.addEventListener('mouseout', endDrawing);
-
-    elements.paintCanvas.addEventListener('touchstart', (event) => {
-        event.preventDefault();
-        startDrawing(event);
-    }, { passive: false });
-
-    elements.paintCanvas.addEventListener('touchend', (event) => {
-        event.preventDefault();
-        endDrawing();
-    }, { passive: false });
-
-    elements.paintCanvas.addEventListener('touchmove', (event) => {
-        event.preventDefault();
-        drawStroke(event);
-    }, { passive: false });
-}
-
-function getCanvasPoint(event) {
-    const rect = elements.paintCanvas.getBoundingClientRect();
-    const point = event.touches && event.touches.length > 0 ? event.touches[0] : event;
-
-    return {
-        x: point.clientX - rect.left,
-        y: point.clientY - rect.top
-    };
-}
-
-function startDrawing(event) {
-    state.isDrawing = true;
-    paintCtx.beginPath();
-    drawStroke(event);
-}
-
-function endDrawing() {
-    if (!state.isDrawing) {
-        return;
-    }
-
-    state.isDrawing = false;
-    paintCtx.beginPath();
-    elements.predictBtn.disabled = false;
-}
-
-function drawStroke(event) {
-    if (!state.isDrawing) {
-        return;
-    }
-
-    const point = getCanvasPoint(event);
-    paintCtx.lineTo(point.x, point.y);
-    paintCtx.stroke();
-    paintCtx.beginPath();
-    paintCtx.moveTo(point.x, point.y);
-}
-
-function resizeContain(sourceWidth, sourceHeight, maxSize) {
-    let width = sourceWidth;
-    let height = sourceHeight;
-
-    if (width <= maxSize && height <= maxSize) {
-        return { width, height };
-    }
-
-    if (width > height) {
-        height *= maxSize / width;
-        width = maxSize;
+function draw(e) {
+    if (!isDrawing) return;
+    
+    // Dapatkan posisi kanvas di layar
+    const rect = paintCanvas.getBoundingClientRect();
+    
+    let clientX, clientY;
+    
+    // Cek apakah ini sentuhan jari (Touch) atau Mouse
+    if (e.touches && e.touches.length > 0) {
+        clientX = e.touches[0].clientX;
+        clientY = e.touches[0].clientY;
     } else {
-        width *= maxSize / height;
-        height = maxSize;
+        clientX = e.clientX;
+        clientY = e.clientY;
     }
 
-    return { width, height };
+    const x = clientX - rect.left;
+    const y = clientY - rect.top;
+
+    ctx.lineTo(x, y);
+    ctx.stroke();
+    ctx.beginPath();
+    ctx.moveTo(x, y);
 }
 
-function drawImageOnBlackCanvas(ctx, canvas, image, targetSize) {
-    canvas.width = targetSize;
-    canvas.height = targetSize;
+// Event Listener untuk Mouse
+paintCanvas.addEventListener('mousedown', startPosition);
+paintCanvas.addEventListener('mouseup', endPosition);
+paintCanvas.addEventListener('mousemove', draw);
+paintCanvas.addEventListener('mouseout', endPosition);
 
-    ctx.fillStyle = '#000000';
-    ctx.fillRect(0, 0, targetSize, targetSize);
+// Event Listener untuk Touch (Layar Sentuh/HP)
+paintCanvas.addEventListener('touchstart', (e) => {
+    e.preventDefault(); // Cegah layar ikut ke-scroll
+    startPosition(e);
+}, { passive: false });
 
-    const fit = resizeContain(image.width, image.height, targetSize);
-    const offsetX = (targetSize - fit.width) / 2;
-    const offsetY = (targetSize - fit.height) / 2;
-    ctx.drawImage(image, offsetX, offsetY, fit.width, fit.height);
-}
+paintCanvas.addEventListener('touchend', (e) => {
+    e.preventDefault();
+    endPosition();
+}, { passive: false });
 
-function forceBlackBackground(ctx, canvas) {
-    // Piksel terang dianggap background, lalu diubah jadi hitam penuh.
-    const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
-    const pixels = imageData.data;
+paintCanvas.addEventListener('touchmove', (e) => {
+    e.preventDefault();
+    draw(e);
+}, { passive: false });
 
-    for (let i = 0; i < pixels.length; i += 4) {
-        const r = pixels[i];
-        const g = pixels[i + 1];
-        const b = pixels[i + 2];
-        const luminance = 0.299 * r + 0.587 * g + 0.114 * b;
-
-        if (luminance >= BACKGROUND_THRESHOLD) {
-            pixels[i] = 0;
-            pixels[i + 1] = 0;
-            pixels[i + 2] = 0;
-        }
-    }
-
-    ctx.putImageData(imageData, 0, 0);
-}
-
-function canvasToBlob(canvas, type, quality) {
-    return new Promise((resolve, reject) => {
-        canvas.toBlob((blob) => {
-            if (!blob) {
-                reject(new Error('Gagal membuat data gambar dari canvas.'));
-                return;
-            }
-
-            resolve(blob);
-        }, type, quality);
-    });
-}
-
-function readFileAsDataURL(file) {
-    return new Promise((resolve, reject) => {
-        const reader = new FileReader();
-        reader.onload = (event) => resolve(event.target.result);
-        reader.onerror = () => reject(new Error('Gagal membaca file upload.'));
-        reader.readAsDataURL(file);
-    });
-}
-
-function loadImage(src) {
-    return new Promise((resolve, reject) => {
-        const image = new Image();
-        image.onload = () => resolve(image);
-        image.onerror = () => reject(new Error('Format gambar tidak valid atau rusak.'));
-        image.src = src;
-    });
-}
-
-async function prepareUploadImage(file) {
-    const dataUrl = await readFileAsDataURL(file);
-    const image = await loadImage(dataUrl);
-
-    const processingCanvas = document.createElement('canvas');
-    const processingCtx = processingCanvas.getContext('2d');
-
-    drawImageOnBlackCanvas(processingCtx, processingCanvas, image, MODEL_INPUT_SIZE);
-    forceBlackBackground(processingCtx, processingCanvas);
-
-    const preparedBlob = await canvasToBlob(processingCanvas, 'image/jpeg', 1.0);
-    state.uploadPreparedBlob = preparedBlob;
-    state.uploadPreparedFilename = `processed-${file.name.replace(/\s+/g, '-').toLowerCase()}.jpg`;
-
-    drawPreviewFromCanvas(processingCanvas);
-}
-
-function drawPreviewFromCanvas(sourceCanvas) {
-    const fit = resizeContain(sourceCanvas.width, sourceCanvas.height, PREVIEW_MAX_SIZE);
-
-    elements.previewCanvas.width = fit.width;
-    elements.previewCanvas.height = fit.height;
-    previewCtx.clearRect(0, 0, fit.width, fit.height);
-    previewCtx.drawImage(sourceCanvas, 0, 0, fit.width, fit.height);
-
-    elements.previewPlaceholder.style.display = 'none';
-    elements.previewCanvas.style.display = 'block';
-}
-
-function bindUploadHandler() {
-    elements.imageInput.addEventListener('change', async (event) => {
-        const file = event.target.files[0];
-        if (!file) {
-            return;
-        }
-
-        try {
-            await prepareUploadImage(file);
-            elements.predictBtn.disabled = false;
-            resetPredictionResult();
-
-            elements.fileName.innerText = `Sumber: ${file.name}`;
-            elements.fileSize.innerText = `Ukuran: ${(file.size / 1024).toFixed(1)} KB`;
-            elements.fileType.innerText = `Tipe: ${file.type}`;
-
-            addLog(`[INFO] Gambar ${file.name} dimuat dan background diubah menjadi hitam.`);
-        } catch (error) {
-            addLog(`[ERROR] ${error.message}`);
-            alert(error.message);
-        }
-    });
-}
-
-async function createPayloadForCurrentMode() {
-    const isUploadActive = document.querySelector('.tab-btn:nth-child(1)').classList.contains('active');
-    const formData = new FormData();
-
-    if (isUploadActive) {
-        if (!state.uploadPreparedBlob) {
-            throw new Error('Pilih file gambar terlebih dahulu!');
-        }
-
-        formData.append('file', state.uploadPreparedBlob, state.uploadPreparedFilename || 'processed-upload.jpg');
-        addLog('[INFO] Mengirim gambar upload (sudah diproses ke background hitam)...');
-        return formData;
-    }
-
-    addLog('[INFO] Menyiapkan gambar dari papan tulis...');
-    const canvasBlob = await canvasToBlob(elements.paintCanvas, 'image/jpeg', 1.0);
-    formData.append('file', canvasBlob, 'canvas-digit.jpg');
-    return formData;
-}
-
-function bindPredictHandler() {
-    elements.predictBtn.addEventListener('click', async () => {
-        try {
-            const payload = await createPayloadForCurrentMode();
-            elements.predictBtn.disabled = true;
-            setStatus('Memproses dengan YOLOv8...', true);
-
-            const response = await fetch(API_URL, {
-                method: 'POST',
-                body: payload
-            });
-
-            if (!response.ok) {
-                throw new Error(`HTTP error! status: ${response.status}`);
-            }
-
-            const result = await response.json();
-            if (result.error) {
-                throw new Error(result.error);
-            }
-
-            const confidencePercent = (result.confidence * 100).toFixed(2);
-            elements.predictionLabel.innerText = `Angka: ${result.label}`;
-            elements.predictionLabel.style.color = 'var(--army-900)';
-            elements.predictionConfidence.innerText = `Confidence: ${confidencePercent}%`;
-            addLog(`[SUCCESS] Deteksi selesai: Angka ${result.label} (${confidencePercent}%)`);
-        } catch (error) {
-            console.error('Terjadi kesalahan:', error);
-            elements.predictionLabel.innerText = 'Gagal memproses';
-            elements.predictionLabel.style.color = '#a35c4c';
-            elements.predictionConfidence.innerText = 'Pastikan terminal Flask menyala.';
-            addLog(`[ERROR] ${error.message}`);
-        } finally {
-            elements.predictBtn.disabled = false;
-            setStatus('Selesai.', false);
-        }
-    });
-}
-
-window.clearCanvas = function clearCanvas() {
-    resetPaintCanvasBackground();
-    elements.predictBtn.disabled = true;
-    resetPredictionResult();
-    addLog('[INFO] Papan tulis dibersihkan.');
+// Tombol Hapus Papan
+window.clearCanvas = function() {
+    resetCanvasBackground();
+    predictBtn.disabled = true; 
+    predictionLabel.innerText = "Belum ada prediksi";
+    predictionLabel.style.color = "var(--army-900)";
+    predictionConfidence.innerText = "Confidence: -";
+    addLog("[INFO] Papan tulis dibersihkan.");
 };
 
-function initialize() {
-    setupPaintCanvas();
-    bindUploadHandler();
-    bindPredictHandler();
+
+// ==========================================
+// 3. LOGIKA UPLOAD & DRAG-DROP GAMBAR
+// ==========================================
+const previewCanvas = document.getElementById('preview-canvas');
+const previewCtx = previewCanvas.getContext('2d');
+const previewPlaceholder = document.getElementById('preview-placeholder');
+const uploadArea = document.getElementById('upload-area'); // Tangkap elemen area upload
+
+// Fungsi untuk memproses gambar (bisa dipakai oleh klik maupun drag-drop)
+function handleImageFile(file) {
+    if (!file || !file.type.startsWith('image/')) {
+        alert("Tolong masukkan file gambar yang valid!");
+        return;
+    }
+
+    predictBtn.disabled = false;
+    document.getElementById('file-name').innerText = `Sumber: ${file.name}`;
+    document.getElementById('file-size').innerText = `Ukuran: ${(file.size / 1024).toFixed(1)} KB`;
+    document.getElementById('file-type').innerText = `Tipe: ${file.type}`;
+
+    // Tampilkan ke dalam Preview Canvas
+    const reader = new FileReader();
+    reader.onload = function(event) {
+        const img = new Image();
+        img.onload = function() {
+            previewPlaceholder.style.display = 'none';
+            previewCanvas.style.display = 'block';
+            
+            // Sesuaikan ukuran preview
+            const maxSize = 150;
+            let width = img.width;
+            let height = img.height;
+            if (width > height) {
+                if (width > maxSize) { height *= maxSize / width; width = maxSize; }
+            } else {
+                if (height > maxSize) { width *= maxSize / height; height = maxSize; }
+            }
+            previewCanvas.width = width;
+            previewCanvas.height = height;
+            previewCtx.drawImage(img, 0, 0, width, height);
+            addLog(`[INFO] Gambar ${file.name} dimuat.`);
+        }
+        img.src = event.target.result;
+    }
+    reader.readAsDataURL(file);
 }
 
-initialize();
+// 1. Event Listener kalau klik manual (Browse File)
+imageInput.addEventListener('change', function(e) {
+    const file = e.target.files[0];
+    handleImageFile(file);
+});
+
+// 2. Event Listener untuk Drag & Drop
+uploadArea.addEventListener('dragover', (e) => {
+    e.preventDefault(); // Wajib! Mencegah browser membuka gambar di tab baru
+    uploadArea.classList.add('dragover'); // Tambah efek visual CSS
+});
+
+uploadArea.addEventListener('dragleave', (e) => {
+    e.preventDefault();
+    uploadArea.classList.remove('dragover'); // Hapus efek visual
+});
+
+uploadArea.addEventListener('drop', (e) => {
+    e.preventDefault();
+    uploadArea.classList.remove('dragover');
+
+    // Ambil file yang dijatuhkan
+    if (e.dataTransfer.files && e.dataTransfer.files.length > 0) {
+        const file = e.dataTransfer.files[0];
+        
+        // Trik: Memasukkan file hasil drop ke dalam <input type="file">
+        // Agar logika tombol Predict di bawahnya tidak perlu diubah
+        const dataTransfer = new DataTransfer();
+        dataTransfer.items.add(file);
+        imageInput.files = dataTransfer.files;
+
+        // Panggil fungsi preview
+        handleImageFile(file);
+    }
+});
+
+
+// ==========================================
+// 4. LOGIKA PENGIRIMAN KE BACKEND YOLOV8
+// ==========================================
+predictBtn.addEventListener('click', async () => {
+    // Tentukan mode apa yang sedang aktif (Upload atau Draw)
+    const isUploadActive = document.querySelector('.tab-btn:nth-child(1)').classList.contains('active');
+    let formData = new FormData();
+
+    if (isUploadActive) {
+        if (imageInput.files.length === 0) {
+            alert("Pilih file gambar terlebih dahulu!");
+            return;
+        }
+        formData.append('file', imageInput.files[0]);
+        addLog(`[INFO] Mengirim gambar via Upload...`);
+    } else {
+        addLog("[INFO] Menyiapkan gambar dari kanvas...");
+        // Ambil gambar dari papan tulis
+        const canvasBlob = await new Promise(resolve => {
+            paintCanvas.toBlob(resolve, 'image/jpeg', 1.0);
+        });
+        formData.append('file', canvasBlob, 'canvas-digit.jpg');
+    }
+
+    // Ubah status antarmuka menjadi "Loading"
+    predictBtn.disabled = true;
+    statusDot.classList.add('loading');
+    statusText.innerText = "Memproses dengan YOLOv8...";
+    
+    try {
+        // Tembak ke API Flask Backend Anda
+        const response = await fetch('http://localhost:5000/predict', {
+            method: 'POST',
+            body: formData
+        });
+
+        if (!response.ok) throw new Error(`HTTP error! status: ${response.status}`);
+        
+        const result = await response.json();
+        
+        if (result.error) throw new Error(result.error);
+
+        // Update Hasil Klasifikasi di Web
+        predictionLabel.innerText = `Angka: ${result.label}`;
+        predictionLabel.style.color = 'var(--army-900)';
+        
+        const confPercent = (result.confidence * 100).toFixed(2);
+        predictionConfidence.innerText = `Confidence: ${confPercent}%`;
+        
+        addLog(`[SUCCESS] Deteksi Selesai: Angka ${result.label} (${confPercent}%)`);
+
+    } catch (error) {
+        console.error("Terjadi Kesalahan:", error);
+        predictionLabel.innerText = "Gagal memproses";
+        predictionLabel.style.color = "#a35c4c";
+        predictionConfidence.innerText = "Pastikan terminal Flask menyala.";
+        addLog(`[ERROR] ${error.message}`);
+    } finally {
+        predictBtn.disabled = false;
+        statusDot.classList.remove('loading');
+        statusText.innerText = "Selesai.";
+    }
+});
